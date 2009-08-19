@@ -46,6 +46,11 @@
  * </refsect2>
  */
 
+#define MIN_WIDTH  16
+#define MAX_WIDTH  65535
+#define MIN_HEIGHT 8
+#define MAX_HEIGHT 65535
+
 static const GstElementDetails gst_jpeg_parse_details =
 GST_ELEMENT_DETAILS ("JPEG stream parser",
     "Codec/Parser/Video",
@@ -56,7 +61,10 @@ static GstStaticPadTemplate gst_jpeg_parse_src_pad_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("image/jpeg, parsed = true")
+    GST_STATIC_CAPS ("image/jpeg, parsed = true, "
+        "width = (int) [ " G_STRINGIFY (MIN_WIDTH) ", " G_STRINGIFY (MAX_WIDTH)
+        "], " "height = (int) [ " G_STRINGIFY (MIN_HEIGHT) ", "
+        G_STRINGIFY (MAX_HEIGHT) " ], " "framerate = (fraction) [ 0/1, MAX ]")
     );
 
 static GstStaticPadTemplate gst_jpeg_parse_sink_pad_template =
