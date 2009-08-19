@@ -51,6 +51,8 @@ struct _GstJpegParse {
 
   GstAdapter  *adapter;
   GstClockTime timestamp;
+
+  int width, height;
 };
 
 struct _GstJpegParseClass {

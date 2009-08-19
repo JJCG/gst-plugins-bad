@@ -328,6 +328,74 @@ gst_jpeg_parse_get_image_length (GstJpegParse * parse)
   return start + offset;
 }
 
+static gboolean
+gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
+{
+  guint8 *data;
+  gint section;
+
+  data = GST_BUFFER_DATA (buffer);
+  data += 2;                    /* skip start marker */
+
+  for (section = 0; section < 19; section++) {
+    gint a, len;
+    guint8 marker;
+
+    for (a = 0; a < 7; a++) {
+      marker = *data++;
+      if (marker != 0xff)
+        break;
+    }
+
+    if (a >= 6 || marker == 0xff)
+      return FALSE;             /* reached max number of sections */
+
+    len = GST_READ_UINT16_BE (data);
+    GST_INFO_OBJECT (parse, "marker = %x - len = %d", marker, len);
+
+    if (len < 6)
+      return FALSE;             /* invalid marker */
+
+    switch (marker) {
+      case 0xda:               /* start of scan (begins compressed data) */
+        return TRUE;
+        break;
+      case 0xd9:               /* end of image (end of datastream) */
+        GST_INFO_OBJECT (parse, "Premature EOI");
+        return FALSE;           /* premature EOI */
+        break;
+      case 0xfe:               /* comment section */
+      case 0xed:               /* non exif image tag */
+      case 0xe1:               /* exif image tag */
+        break;
+      case 0xc2:               /* progressive jpeg */
+        GST_INFO_OBJECT (parse, "Progressive image");
+
+      case 0xc0:               /* start of frame N */
+      case 0xc1:               /* N indicates which compression process */
+      case 0xc3:
+      case 0xc5:               /* 0xc4 and 0xcc are not sof markers */
+      case 0xc6:
+      case 0xc7:
+      case 0xc9:
+      case 0xca:
+      case 0xcb:
+      case 0xcd:
+      case 0xce:
+      case 0xcf:
+        parse->height = GST_READ_UINT16_BE (data + 3);
+        parse->width = GST_READ_UINT16_BE (data + 5);
+        break;
+      default:
+        break;
+    }
+
+    data += len;
+  }
+
+  return FALSE;
+}
+
 static GstFlowReturn
 gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
 {
@@ -339,6 +407,27 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
     GST_ERROR_OBJECT (parse, "Failed to take buffer of size %u", len);
     return GST_FLOW_ERROR;
   }
+
+  if (gst_jpeg_parse_read_header (parse, outbuf)) {
+    GstCaps *caps;
+
+    caps = gst_caps_new_simple ("image/jpeg",
+        "width", G_TYPE_INT, parse->width,
+        "height", G_TYPE_INT, parse->height,
+        "framerate", GST_TYPE_FRACTION, 0, 1, NULL);
+
+    if (!gst_pad_set_caps (parse->srcpad, caps)) {
+      GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION, (NULL),
+          ("Can't set caps to the src pad"));
+      return GST_FLOW_ERROR;
+    }
+
+    gst_caps_unref (caps);
+  } else {
+    GST_ERROR_OBJECT (parse, "Failed to read the image header");
+    return GST_FLOW_ERROR;
+  }
+
   GST_BUFFER_TIMESTAMP (outbuf) = parse->timestamp;
   gst_buffer_set_caps (outbuf, GST_PAD_CAPS (parse->srcpad));
   parse->timestamp = GST_CLOCK_TIME_NONE;
