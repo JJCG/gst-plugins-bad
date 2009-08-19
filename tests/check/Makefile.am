@@ -105,6 +105,7 @@ check_PROGRAMS = \
 	elements/amrparse \
 	elements/asfmux \
 	elements/legacyresample \
+	elements/jpegparse \
 	elements/qtmux \
 	elements/selector \
 	elements/shapewipe \
