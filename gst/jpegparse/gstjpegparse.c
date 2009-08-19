@@ -176,10 +176,6 @@ gst_jpeg_parse_dispose (GObject * object)
 static gboolean
 gst_jpeg_parse_skip_to_jpeg_header (GstJpegParse * parse)
 {
-  /* When this element was written,  gst_adapter_masked_scan_uint32() had just
-   * been added, so we still support the manual scanning method too. */
-#if GST_CHECK_VERSION(0,10,24) || \
-  (GST_CHECK_VERSION(0,10,23) && GST_VERSION_NANO >= 1)
   guint available, flush;
   gboolean ret = TRUE;
 
@@ -197,31 +193,6 @@ gst_jpeg_parse_skip_to_jpeg_header (GstJpegParse * parse)
     gst_adapter_flush (parse->adapter, flush);
   }
   return ret;
-
-#else /* GST_CHECK_VERSION(0,10,24) */
-  guint size;
-
-  while ((size = gst_adapter_available (parse->adapter)) >= 3) {
-    const guint8 *data, *marker;
-    guint off;
-    data = gst_adapter_peek (parse->adapter, size);
-
-    if (data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff)
-      return TRUE;
-
-    marker = memchr (data + 1, 0xff, size - 1 - 2);
-    if (marker == NULL) {
-      off = size - 1;           /* keep last byte */
-    } else {
-      off = marker - data;
-    }
-
-    GST_LOG_OBJECT (parse, "Skipping %u bytes.", off);
-    gst_adapter_flush (parse->adapter, off);
-  }
-
-  return FALSE;
-#endif /* GST_CHECK_VERSION(0,10,24) */
 }
 
 static inline gboolean
