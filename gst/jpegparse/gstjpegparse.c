@@ -61,7 +61,7 @@ static GstStaticPadTemplate gst_jpeg_parse_src_pad_template =
 GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("image/jpeg, parsed = true, "
+    GST_STATIC_CAPS ("image/jpeg, "
         "width = (int) [ " G_STRINGIFY (MIN_WIDTH) ", " G_STRINGIFY (MAX_WIDTH)
         "], " "height = (int) [ " G_STRINGIFY (MIN_HEIGHT) ", "
         G_STRINGIFY (MAX_HEIGHT) " ], " "framerate = (fraction) [ 0/1, MAX ]")
@@ -71,7 +71,7 @@ static GstStaticPadTemplate gst_jpeg_parse_sink_pad_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("image/jpeg, parsed = false")
+    GST_STATIC_CAPS ("image/jpeg")
     );
 
 GST_DEBUG_CATEGORY_STATIC (jpeg_parse_debug);
@@ -160,9 +160,6 @@ gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
       "src");
   gst_pad_set_event_function (parse->srcpad,
       GST_DEBUG_FUNCPTR (gst_jpeg_parse_src_event));
-  gst_pad_set_caps (parse->srcpad,
-      gst_static_pad_template_get_caps (&gst_jpeg_parse_src_pad_template));
-  gst_pad_use_fixed_caps (parse->srcpad);
   gst_element_add_pad (GST_ELEMENT (parse), parse->srcpad);
 
   parse->adapter = gst_adapter_new ();
