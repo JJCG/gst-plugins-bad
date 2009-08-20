@@ -58,7 +58,9 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("image/jpeg, "
         "width = (int) [ 0, MAX ],"
-        "height = (int) [ 0, MAX ], " "framerate = (fraction) [ 0/1, MAX ]")
+        "height = (int) [ 0, MAX ], "
+        "progressive = (boolean) { true, false }, "
+        "framerate = (fraction) [ 0/1, MAX ]")
     );
 
 static GstStaticPadTemplate gst_jpeg_parse_sink_pad_template =
@@ -492,6 +494,8 @@ gst_jpeg_parse_src_event (GstPad * pad, GstEvent * event)
        * to flush it. */
       gst_adapter_clear (parse->adapter);
       parse->timestamp = GST_CLOCK_TIME_NONE;
+      parse->width = parse->height = 0;
+      parse->progressive = FALSE;
       break;
     default:
       break;
