@@ -163,6 +163,9 @@ gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
   gst_element_add_pad (GST_ELEMENT (parse), parse->srcpad);
 
   parse->adapter = gst_adapter_new ();
+
+  parse->width = parse->height = 0;
+  parse->progressive = FALSE;
 }
 
 static void
@@ -351,7 +354,7 @@ gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
       return FALSE;             /* reached max number of sections */
 
     len = GST_READ_UINT16_BE (data);
-    GST_INFO_OBJECT (parse, "marker = %x - len = %d", marker, len);
+    GST_INFO_OBJECT (parse, "marker = %x, length = %d", marker, len);
 
     if (len < 6)
       return FALSE;             /* invalid marker */
@@ -369,8 +372,7 @@ gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
       case 0xe1:               /* exif image tag */
         break;
       case 0xc2:               /* progressive jpeg */
-        GST_INFO_OBJECT (parse, "Progressive image");
-
+        parse->progressive = TRUE;
       case 0xc0:               /* start of frame N */
       case 0xc1:               /* N indicates which compression process */
       case 0xc3:
@@ -414,7 +416,8 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
     caps = gst_caps_new_simple ("image/jpeg",
         "width", G_TYPE_INT, parse->width,
         "height", G_TYPE_INT, parse->height,
-        "framerate", GST_TYPE_FRACTION, 0, 1, NULL);
+        "framerate", GST_TYPE_FRACTION, 0, 1,
+        "progressive", G_TYPE_BOOLEAN, parse->progressive, NULL);
 
     if (!gst_pad_set_caps (parse->srcpad, caps)) {
       GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION, (NULL),
