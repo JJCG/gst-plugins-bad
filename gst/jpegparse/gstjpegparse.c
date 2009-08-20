@@ -536,6 +536,8 @@ gst_jpeg_parse_change_state (GstElement * element, GstStateChange transition)
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_adapter_clear (parse->adapter);
       parse->timestamp = GST_CLOCK_TIME_NONE;
+      parse->width = parse->height = 0;
+      parse->progressive = FALSE;
       break;
     default:
       break;
