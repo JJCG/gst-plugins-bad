@@ -57,6 +57,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
     GST_PAD_SRC,
     GST_PAD_ALWAYS,
     GST_STATIC_CAPS ("image/jpeg, "
+        "format = (fourcc) { I420, UYVY }, "
         "width = (int) [ 0, MAX ],"
         "height = (int) [ 0, MAX ], "
         "progressive = (boolean) { true, false }, "
@@ -327,6 +328,34 @@ gst_jpeg_parse_get_image_length (GstJpegParse * parse)
   return start + offset;
 }
 
+static gint
+gst_jpeg_parse_get_color_format (const guint8 * data)
+{
+  gint j, i, temp;
+  gshort H[4], V[4];
+  guint8 Nf = data[7];
+
+  if (Nf != 3)
+    goto done;
+
+  for (j = 0; j < Nf; j++) {
+    i = j * 3 + 7 + 2;
+    /* H[j]: upper 4 bits of a byte, horizontal sampling factor. */
+    H[j] = (0x0f & (data[i] >> 4));
+
+    /* V[j]: lower 4 bits of a byte, vertical sampling factor.   */
+    V[j] = (0x0f & data[i]);
+  }
+
+  temp = (V[0] * H[0]) / (V[1] * H[1]);
+
+  if (temp == 4 && H[0] == 2)
+    return GST_MAKE_FOURCC ('I', '4', '2', '0');
+
+done:
+  return GST_MAKE_FOURCC ('U', 'Y', 'V', 'Y');
+}
+
 static gboolean
 gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
 {
@@ -383,6 +412,7 @@ gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
       case 0xcf:
         parse->height = GST_READ_UINT16_BE (data + 3);
         parse->width = GST_READ_UINT16_BE (data + 5);
+        parse->fourcc = gst_jpeg_parse_get_color_format (data);
         break;
       default:
         break;
@@ -410,6 +440,7 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
     GstCaps *caps;
 
     caps = gst_caps_new_simple ("image/jpeg",
+        "format", GST_TYPE_FOURCC, parse->fourcc,
         "width", G_TYPE_INT, parse->width,
         "height", G_TYPE_INT, parse->height,
         "framerate", GST_TYPE_FRACTION, 0, 1,

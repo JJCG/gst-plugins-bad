@@ -52,8 +52,26 @@ struct _GstJpegParse {
   GstAdapter  *adapter;
   GstClockTime timestamp;
 
+  /* negotiated state */
   guint16 width, height;
+  gint caps_framerate_numerator;
+  gint caps_framerate_denominator;
+
+  /* TRUE if the image is progressive */
   gboolean progressive;
+
+  /* fourcc color space */
+  guint32 fourcc;
+
+  /* TRUE if each input buffer contains a whole jpeg image */
+  gboolean packetized;
+
+  /* the (expected) timestamp of the next frame */
+  guint64 next_ts;
+
+  /* video state */
+  gint framerate_numerator;
+  gint framerate_denominator;
 };
 
 struct _GstJpegParseClass {
