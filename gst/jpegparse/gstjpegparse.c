@@ -81,6 +81,7 @@ static void gst_jpeg_parse_class_init (GstJpegParseClass * klass);
 static void gst_jpeg_parse_dispose (GObject * object);
 
 static GstFlowReturn gst_jpeg_parse_chain (GstPad * pad, GstBuffer * buffer);
+static gboolean gst_jpeg_parse_sink_setcaps (GstPad * pad, GstCaps * caps);
 static gboolean gst_jpeg_parse_sink_event (GstPad * pad, GstEvent * event);
 static gboolean gst_jpeg_parse_src_event (GstPad * pad, GstEvent * event);
 static GstStateChangeReturn gst_jpeg_parse_change_state (GstElement * element,
@@ -147,9 +148,8 @@ gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
       GST_DEBUG_FUNCPTR (gst_jpeg_parse_chain));
   gst_pad_set_event_function (parse->sinkpad,
       GST_DEBUG_FUNCPTR (gst_jpeg_parse_sink_event));
-  gst_pad_set_caps (parse->sinkpad,
-      gst_static_pad_template_get_caps (&gst_jpeg_parse_sink_pad_template));
-  gst_pad_use_fixed_caps (parse->sinkpad);
+  gst_pad_set_setcaps_function (parse->sinkpad,
+      GST_DEBUG_FUNCPTR (gst_jpeg_parse_sink_setcaps));
   gst_element_add_pad (GST_ELEMENT (parse), parse->sinkpad);
 
   parse->srcpad =
@@ -173,6 +173,25 @@ gst_jpeg_parse_dispose (GObject * object)
   gst_jpeg_parse_reset (parse);
 
   G_OBJECT_CLASS (parent_class)->dispose (object);
+}
+
+static gboolean
+gst_jpeg_parse_sink_setcaps (GstPad * pad, GstCaps * caps)
+{
+  GstJpegParse *parse = GST_JPEG_PARSE (GST_OBJECT_PARENT (pad));
+  GstStructure *s = gst_caps_get_structure (caps, 0);
+  const GValue *framerate;
+
+  if ((framerate = gst_structure_get_value (s, "framerate")) != NULL) {
+    parse->framerate_numerator = gst_value_get_fraction_numerator (framerate);
+    parse->framerate_denominator =
+        gst_value_get_fraction_denominator (framerate);
+    parse->packetized = TRUE;
+    GST_DEBUG_OBJECT (parse, "got framerate of %d/%d fps => packetized mode",
+        parse->framerate_numerator, parse->framerate_denominator);
+  }
+
+  return TRUE;
 }
 
 /* Flush everything until the next JPEG header.  The header is considered
