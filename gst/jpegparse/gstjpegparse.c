@@ -398,7 +398,7 @@ gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
     len = GST_READ_UINT16_BE (data);
     GST_INFO_OBJECT (parse, "marker = %x, length = %d", marker, len);
 
-    if (len < 4)
+    if (len < 2)
       return FALSE;             /* invalid marker */
 
     switch (marker) {
