@@ -132,7 +132,7 @@ gst_jpeg_parse_reset (GstJpegParse * parse)
   }
   parse->srcpad = NULL;
   parse->sinkpad = NULL;
-  parse->timestamp = GST_CLOCK_TIME_NONE;
+  parse->next_ts = GST_CLOCK_TIME_NONE;
 }
 
 static void
@@ -162,7 +162,12 @@ gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
   parse->adapter = gst_adapter_new ();
 
   parse->width = parse->height = 0;
+  parse->framerate_numerator = 0;
+  parse->framerate_denominator = 1;
+  parse->caps_framerate_numerator = parse->caps_framerate_denominator = 0;
+  parse->caps_width = parse->caps_height = -1;
   parse->progressive = FALSE;
+  parse->packetized = FALSE;
 }
 
 static void
@@ -183,12 +188,14 @@ gst_jpeg_parse_sink_setcaps (GstPad * pad, GstCaps * caps)
   const GValue *framerate;
 
   if ((framerate = gst_structure_get_value (s, "framerate")) != NULL) {
-    parse->framerate_numerator = gst_value_get_fraction_numerator (framerate);
-    parse->framerate_denominator =
-        gst_value_get_fraction_denominator (framerate);
-    parse->packetized = TRUE;
-    GST_DEBUG_OBJECT (parse, "got framerate of %d/%d fps => packetized mode",
-        parse->framerate_numerator, parse->framerate_denominator);
+    if (GST_VALUE_HOLDS_FRACTION (framerate)) {
+      parse->framerate_numerator = gst_value_get_fraction_numerator (framerate);
+      parse->framerate_denominator =
+          gst_value_get_fraction_denominator (framerate);
+      parse->packetized = TRUE;
+      GST_DEBUG_OBJECT (parse, "got framerate of %d/%d fps => packetized mode",
+          parse->framerate_numerator, parse->framerate_denominator);
+    }
   }
 
   return TRUE;
@@ -456,30 +463,64 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
   }
 
   if (gst_jpeg_parse_read_header (parse, outbuf)) {
-    GstCaps *caps;
+    if (parse->width != parse->caps_width || parse->height != parse->height ||
+        parse->framerate_numerator != parse->caps_framerate_numerator ||
+        parse->framerate_denominator != parse->caps_framerate_denominator) {
+      GstCaps *caps;
 
-    caps = gst_caps_new_simple ("image/jpeg",
-        "format", GST_TYPE_FOURCC, parse->fourcc,
-        "width", G_TYPE_INT, parse->width,
-        "height", G_TYPE_INT, parse->height,
-        "framerate", GST_TYPE_FRACTION, 0, 1,
-        "progressive", G_TYPE_BOOLEAN, parse->progressive, NULL);
+      /* framerate == 0/1 is a still frame */
+      if (parse->framerate_denominator == 0) {
+        parse->framerate_numerator = 0;
+        parse->framerate_denominator = 1;
+      }
 
-    if (!gst_pad_set_caps (parse->srcpad, caps)) {
-      GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION, (NULL),
-          ("Can't set caps to the src pad"));
-      return GST_FLOW_ERROR;
+      caps = gst_caps_new_simple ("image/jpeg",
+          "format", GST_TYPE_FOURCC, parse->fourcc,
+          "width", G_TYPE_INT, parse->width,
+          "height", G_TYPE_INT, parse->height,
+          "framerate", GST_TYPE_FRACTION, parse->framerate_numerator,
+          parse->framerate_denominator,
+          "progressive", G_TYPE_BOOLEAN, parse->progressive, NULL);
+
+      if (!gst_pad_set_caps (parse->srcpad, caps)) {
+        GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION, (NULL),
+            ("Can't set caps to the src pad"));
+        return GST_FLOW_ERROR;
+      }
+
+      gst_caps_unref (caps);
+
+      parse->caps_width = parse->width;
+      parse->caps_height = parse->height;
+      parse->caps_framerate_numerator = parse->framerate_numerator;
+      parse->caps_framerate_denominator = parse->framerate_denominator;
     }
-
-    gst_caps_unref (caps);
   } else {
     GST_ERROR_OBJECT (parse, "Failed to read the image header");
     return GST_FLOW_ERROR;
   }
 
-  GST_BUFFER_TIMESTAMP (outbuf) = parse->timestamp;
+  GST_BUFFER_TIMESTAMP (outbuf) = parse->next_ts;
+
+  if (parse->packetized && GST_CLOCK_TIME_IS_VALID (parse->next_ts)) {
+    if (GST_CLOCK_TIME_IS_VALID (parse->duration)) {
+      parse->next_ts += parse->duration;
+    } else if (parse->framerate_numerator != 0) {
+      parse->duration = gst_util_uint64_scale (GST_SECOND,
+          parse->framerate_denominator, parse->framerate_numerator);
+      parse->next_ts += parse->duration;
+    } else {
+      parse->duration = GST_CLOCK_TIME_NONE;
+      parse->next_ts = GST_CLOCK_TIME_NONE;
+    }
+  } else {
+    parse->duration = GST_CLOCK_TIME_NONE;
+    parse->next_ts = GST_CLOCK_TIME_NONE;
+  }
+
+  GST_BUFFER_DURATION (outbuf) = parse->duration;
+
   gst_buffer_set_caps (outbuf, GST_PAD_CAPS (parse->srcpad));
-  parse->timestamp = GST_CLOCK_TIME_NONE;
 
   /* FIXME set duration? */
 
@@ -496,22 +537,30 @@ gst_jpeg_parse_chain (GstPad * pad, GstBuffer * buf)
 {
   GstJpegParse *parse;
   guint len;
-  GstClockTime timestamp;
+  GstClockTime timestamp, duration;
   GstFlowReturn ret = GST_FLOW_OK;
 
   parse = GST_JPEG_PARSE (GST_PAD_PARENT (pad));
 
   timestamp = GST_BUFFER_TIMESTAMP (buf);
+  duration = GST_BUFFER_DURATION (buf);
 
   gst_adapter_push (parse->adapter, buf);
 
   while (ret == GST_FLOW_OK && gst_jpeg_parse_skip_to_jpeg_header (parse)) {
-    if (G_UNLIKELY (!GST_CLOCK_TIME_IS_VALID (parse->timestamp)))
-      parse->timestamp = timestamp;
+    if (GST_CLOCK_TIME_IS_VALID (timestamp))
+      parse->next_ts = timestamp;
 
-    len = gst_jpeg_parse_get_image_length (parse);
-    if (len == 0)
-      return GST_FLOW_OK;
+    if (GST_CLOCK_TIME_IS_VALID (duration))
+      parse->duration = duration;
+
+    if (!parse->packetized) {
+      len = gst_jpeg_parse_get_image_length (parse);
+      if (len == 0)
+        return GST_FLOW_OK;
+    } else {
+      len = GST_BUFFER_SIZE (buf);
+    }
 
     ret = gst_jpeg_parse_push_buffer (parse, len);
   }
@@ -543,9 +592,14 @@ gst_jpeg_parse_src_event (GstPad * pad, GstEvent * event)
       /* Discard any data in the adapter.  There should have been an EOS before
        * to flush it. */
       gst_adapter_clear (parse->adapter);
-      parse->timestamp = GST_CLOCK_TIME_NONE;
+      parse->next_ts = GST_CLOCK_TIME_NONE;
       parse->width = parse->height = 0;
+      parse->framerate_numerator = 0;
+      parse->framerate_denominator = 1;
+      parse->caps_framerate_numerator = parse->caps_framerate_denominator = 0;
+      parse->caps_width = parse->caps_height = -1;
       parse->progressive = FALSE;
+      parse->packetized = FALSE;
       break;
     default:
       break;
@@ -583,9 +637,14 @@ gst_jpeg_parse_change_state (GstElement * element, GstStateChange transition)
   switch (transition) {
     case GST_STATE_CHANGE_PAUSED_TO_READY:
       gst_adapter_clear (parse->adapter);
-      parse->timestamp = GST_CLOCK_TIME_NONE;
+      parse->next_ts = GST_CLOCK_TIME_NONE;
       parse->width = parse->height = 0;
+      parse->framerate_numerator = 0;
+      parse->framerate_denominator = 1;
+      parse->caps_framerate_numerator = parse->caps_framerate_denominator = 0;
+      parse->caps_width = parse->caps_height = -1;
       parse->progressive = FALSE;
+      parse->packetized = FALSE;
       break;
     default:
       break;

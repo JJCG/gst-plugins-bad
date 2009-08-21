@@ -50,10 +50,10 @@ struct _GstJpegParse {
   GstPad      *srcpad;
 
   GstAdapter  *adapter;
-  GstClockTime timestamp;
 
   /* negotiated state */
   guint16 width, height;
+  gint caps_width, caps_height;
   gint caps_framerate_numerator;
   gint caps_framerate_denominator;
 
@@ -68,6 +68,9 @@ struct _GstJpegParse {
 
   /* the (expected) timestamp of the next frame */
   guint64 next_ts;
+
+  /* duration of the current frame */
+  guint64 duration;
 
   /* video state */
   gint framerate_numerator;
