@@ -458,7 +458,9 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
 
   outbuf = gst_adapter_take_buffer (parse->adapter, len);
   if (outbuf == NULL) {
-    GST_ERROR_OBJECT (parse, "Failed to take buffer of size %u", len);
+    GST_ELEMENT_ERROR (parse, STREAM, DECODE,
+        ("Failed to take buffer of size %u", len),
+        ("Failed to take buffer of size %u", len));
     return GST_FLOW_ERROR;
   }
 
@@ -483,7 +485,8 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
           "progressive", G_TYPE_BOOLEAN, parse->progressive, NULL);
 
       if (!gst_pad_set_caps (parse->srcpad, caps)) {
-        GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION, (NULL),
+        GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION,
+            ("Can't set caps to the src pad"),
             ("Can't set caps to the src pad"));
         return GST_FLOW_ERROR;
       }
@@ -496,7 +499,9 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
       parse->caps_framerate_denominator = parse->framerate_denominator;
     }
   } else {
-    GST_ERROR_OBJECT (parse, "Failed to read the image header");
+    GST_ELEMENT_ERROR (parse, STREAM, DECODE,
+        ("Failed to read the image header"),
+        ("Failed to read the image header"));
     return GST_FLOW_ERROR;
   }
 
@@ -521,8 +526,6 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
   GST_BUFFER_DURATION (outbuf) = parse->duration;
 
   gst_buffer_set_caps (outbuf, GST_PAD_CAPS (parse->srcpad));
-
-  /* FIXME set duration? */
 
   GST_LOG_OBJECT (parse, "pushing buffer (ts=%" GST_TIME_FORMAT ", len=%u)",
       GST_TIME_ARGS (GST_BUFFER_TIMESTAMP (outbuf)), len);
@@ -565,7 +568,7 @@ gst_jpeg_parse_chain (GstPad * pad, GstBuffer * buf)
     ret = gst_jpeg_parse_push_buffer (parse, len);
   }
 
-  GST_DEBUG_OBJECT (parse, "No start marker found, waiting for more data.");
+  GST_DEBUG_OBJECT (parse, "No further start marker found.");
   return ret;
 }
 
