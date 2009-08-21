@@ -160,14 +160,6 @@ gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
   gst_element_add_pad (GST_ELEMENT (parse), parse->srcpad);
 
   parse->adapter = gst_adapter_new ();
-
-  parse->width = parse->height = 0;
-  parse->framerate_numerator = 0;
-  parse->framerate_denominator = 1;
-  parse->caps_framerate_numerator = parse->caps_framerate_denominator = 0;
-  parse->caps_width = parse->caps_height = -1;
-  parse->progressive = FALSE;
-  parse->packetized = FALSE;
 }
 
 static void
@@ -595,14 +587,6 @@ gst_jpeg_parse_src_event (GstPad * pad, GstEvent * event)
       /* Discard any data in the adapter.  There should have been an EOS before
        * to flush it. */
       gst_adapter_clear (parse->adapter);
-      parse->next_ts = GST_CLOCK_TIME_NONE;
-      parse->width = parse->height = 0;
-      parse->framerate_numerator = 0;
-      parse->framerate_denominator = 1;
-      parse->caps_framerate_numerator = parse->caps_framerate_denominator = 0;
-      parse->caps_width = parse->caps_height = -1;
-      parse->progressive = FALSE;
-      parse->packetized = FALSE;
       break;
     default:
       break;
@@ -633,13 +617,8 @@ gst_jpeg_parse_change_state (GstElement * element, GstStateChange transition)
 
   parse = GST_JPEG_PARSE (element);
 
-  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
-  if (ret != GST_STATE_CHANGE_SUCCESS)
-    return ret;
-
   switch (transition) {
-    case GST_STATE_CHANGE_PAUSED_TO_READY:
-      gst_adapter_clear (parse->adapter);
+    case GST_STATE_CHANGE_READY_TO_PAUSED:
       parse->next_ts = GST_CLOCK_TIME_NONE;
       parse->width = parse->height = 0;
       parse->framerate_numerator = 0;
@@ -648,6 +627,17 @@ gst_jpeg_parse_change_state (GstElement * element, GstStateChange transition)
       parse->caps_width = parse->caps_height = -1;
       parse->progressive = FALSE;
       parse->packetized = FALSE;
+    default:
+      break;
+  }
+
+  ret = GST_ELEMENT_CLASS (parent_class)->change_state (element, transition);
+  if (ret != GST_STATE_CHANGE_SUCCESS)
+    return ret;
+
+  switch (transition) {
+    case GST_STATE_CHANGE_PAUSED_TO_READY:
+      gst_adapter_clear (parse->adapter);
       break;
     default:
       break;
