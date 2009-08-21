@@ -81,8 +81,8 @@ struct _GstJpegParseClass {
   GstElementClass  parent_class;
 };
 
-GType gst_jpeg_parse_get_type(void);
+GType gst_jpeg_parse_get_type (void);
 
 G_END_DECLS
 
-#endif
+#endif /* __GST_JPEG_PARSE_H__ */
