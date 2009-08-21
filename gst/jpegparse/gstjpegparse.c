@@ -3,6 +3,7 @@
  * jpegparse: a parser for JPEG streams
  *
  * Copyright (C) <2009> Arnout Vandecappelle (Essensium/Mind) <arnout@mind.be>
+ *                      Víctor Manuel Jáquez Leal <vjaquez@igalia.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -19,32 +20,30 @@
  * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
  * Boston, MA 02111-1307, USA.
  */
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
-
-#include <string.h>
-
-#include <gst/gst.h>
-
-#include "gstjpegparse.h"
-#include "gst/gst-i18n-plugin.h"
 
 /**
  * SECTION:element-jpegparse
+ * @short_description: JPEG parser
  *
- * Parses a JPEG stream into JPEG images.  It looks for EOI boundaries to split
- * a continuous stream into single-frame buffers.
- *
+ * Parses a JPEG stream into JPEG images.  It looks for EOI boundaries to
+ * split a continuous stream into single-frame buffers. Also reads the
+ * image header searching for image properties such as width and height
+ * among others.
  * <refsect2>
  * <title>Example launch line</title>
  * |[
  * gst-launch -v souphttpsrc location=... ! jpegparse ! matroskamux ! filesink location=...
  * ]|
- * The above pipeline fetches a motion JPEG stream from an IP camera over HTTP
- * and stores it in a matroska file.
+ * The above pipeline fetches a motion JPEG stream from an IP camera over
+ * HTTP and stores it in a matroska file.
  * </refsect2>
  */
+
+#ifdef HAVE_CONFIG_H
+#include <config.h>
+#endif
+
+#include "gstjpegparse.h"
 
 static const GstElementDetails gst_jpeg_parse_details =
 GST_ELEMENT_DETAILS ("JPEG stream parser",
