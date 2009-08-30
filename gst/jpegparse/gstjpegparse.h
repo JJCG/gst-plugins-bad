@@ -57,8 +57,8 @@ struct _GstJpegParse {
   gint caps_framerate_numerator;
   gint caps_framerate_denominator;
 
-  /* TRUE if the image is progressive */
-  gboolean progressive;
+  /* TRUE if the image is interlaced */
+  gboolean interlaced;
 
   /* fourcc color space */
   guint32 fourcc;

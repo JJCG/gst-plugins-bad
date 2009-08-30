@@ -59,7 +59,7 @@ GST_STATIC_PAD_TEMPLATE ("src",
         "format = (fourcc) { I420, UYVY }, "
         "width = (int) [ 0, MAX ],"
         "height = (int) [ 0, MAX ], "
-        "progressive = (boolean) { true, false }, "
+        "interlaced = (boolean) { true, false }, "
         "framerate = (fraction) [ 0/1, MAX ]")
     );
 
@@ -413,8 +413,8 @@ gst_jpeg_parse_read_header (GstJpegParse * parse, GstBuffer * buffer)
       case 0xed:               /* non exif image tag */
       case 0xe1:               /* exif image tag */
         break;
-      case 0xc2:               /* progressive jpeg */
-        parse->progressive = TRUE;
+      case 0xc2:               /* interlaced jpeg */
+        parse->interlaced = TRUE;
       case 0xc0:               /* start of frame N */
       case 0xc1:               /* N indicates which compression process */
       case 0xc3:
@@ -473,7 +473,7 @@ gst_jpeg_parse_push_buffer (GstJpegParse * parse, guint len)
           "height", G_TYPE_INT, parse->height,
           "framerate", GST_TYPE_FRACTION, parse->framerate_numerator,
           parse->framerate_denominator,
-          "progressive", G_TYPE_BOOLEAN, parse->progressive, NULL);
+          "interlaced", G_TYPE_BOOLEAN, parse->interlaced, NULL);
 
       if (!gst_pad_set_caps (parse->srcpad, caps)) {
         GST_ELEMENT_ERROR (parse, CORE, NEGOTIATION,
@@ -624,7 +624,7 @@ gst_jpeg_parse_change_state (GstElement * element, GstStateChange transition)
       parse->framerate_denominator = 1;
       parse->caps_framerate_numerator = parse->caps_framerate_denominator = 0;
       parse->caps_width = parse->caps_height = -1;
-      parse->progressive = FALSE;
+      parse->interlaced = FALSE;
       parse->packetized = FALSE;
     default:
       break;
