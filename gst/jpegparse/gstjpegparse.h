@@ -41,6 +41,7 @@ G_BEGIN_DECLS
 
 typedef struct _GstJpegParse           GstJpegParse;
 typedef struct _GstJpegParseClass      GstJpegParseClass;
+typedef struct _GstJpegParsePrivate    GstJpegParsePrivate;
 
 struct _GstJpegParse {
   GstElement element;

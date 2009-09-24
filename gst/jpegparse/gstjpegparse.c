@@ -45,6 +45,27 @@
 
 #include "gstjpegparse.h"
 
+enum
+{
+	PROP_0,
+	PROP_THUMBNAILONLY,
+};
+
+
+#define GST_JPEGPARSE_GET_PRIVATE(obj) \
+	(G_TYPE_INSTANCE_GET_PRIVATE ((obj), GST_TYPE_JPEG_PARSE, GstJpegParsePrivate))
+
+struct _GstJpegParsePrivate
+{
+	gint width;
+	gint height;
+	gboolean thumbnail_only;
+	gint thumbnail_offset;
+	gint thumbnail_length;
+};
+
+
+
 static const GstElementDetails gst_jpeg_parse_details =
 GST_ELEMENT_DETAILS ("JPEG stream parser",
     "Codec/Parser/Video",
@@ -72,6 +93,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
 
 GST_DEBUG_CATEGORY_STATIC (jpeg_parse_debug);
 #define GST_CAT_DEFAULT jpeg_parse_debug
+#define DEFAULT_THUMBNAIL_ONLY	FALSE
 
 static GstElementClass *parent_class;   /* NULL */
 
@@ -85,6 +107,10 @@ static gboolean gst_jpeg_parse_sink_event (GstPad * pad, GstEvent * event);
 static gboolean gst_jpeg_parse_src_event (GstPad * pad, GstEvent * event);
 static GstStateChangeReturn gst_jpeg_parse_change_state (GstElement * element,
     GstStateChange transition);
+static void gst_jpeg_parse_set_property (GObject* object, guint prop_id,
+    const GValue* value, GParamSpec* pspec);
+static void gst_jpeg_parse_get_property (GObject* object, guint prop_id,
+    GValue* value, GParamSpec* pspec);
 
 #define DEBUG_INIT(bla) \
   GST_DEBUG_CATEGORY_INIT (jpeg_parse_debug, "jpegparse", 0, "JPEG parser");
@@ -109,11 +135,30 @@ gst_jpeg_parse_class_init (GstJpegParseClass * klass)
 {
   GstElementClass *gstelement_class;
   GObjectClass *gobject_class;
+  GObjectClass* g_klass;
+  GParamSpec* spec;
+
+
+	g_klass = G_OBJECT_CLASS (klass);
 
   gstelement_class = (GstElementClass *) klass;
   gobject_class = (GObjectClass *) klass;
 
   parent_class = g_type_class_peek_parent (klass);
+
+  g_type_class_add_private (klass, sizeof (GstJpegParsePrivate));
+
+  g_klass->set_property =
+		GST_DEBUG_FUNCPTR (gst_jpeg_parse_set_property);
+
+  g_klass->get_property =
+		GST_DEBUG_FUNCPTR (gst_jpeg_parse_get_property);
+
+  spec = g_param_spec_boolean ("thumbnail-only", "Thumbnail-only",
+		  "Selects thumbnail as output frame", DEFAULT_THUMBNAIL_ONLY,
+		  G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS);
+
+  g_object_class_install_property (g_klass, PROP_THUMBNAILONLY, spec);
 
   gobject_class->dispose = gst_jpeg_parse_dispose;
 
@@ -137,7 +182,15 @@ gst_jpeg_parse_reset (GstJpegParse * parse)
 static void
 gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
 {
+  GstJpegParsePrivate* priv = GST_JPEGPARSE_GET_PRIVATE (parse);
+
   gst_jpeg_parse_reset (parse);
+
+  priv->width = -1;
+  priv->height = -1;
+  priv->thumbnail_only = FALSE;
+  priv->thumbnail_offset = 0;
+  priv->thumbnail_length = 0;
 
   /* create the sink and src pads */
   parse->sinkpad =
@@ -160,6 +213,48 @@ gst_jpeg_parse_init (GstJpegParse * parse, GstJpegParseClass * g_class)
 
   parse->adapter = gst_adapter_new ();
 }
+
+
+static void
+gst_jpeg_parse_set_property (GObject* object, guint prop_id,
+			      const GValue* value, GParamSpec* pspec)
+{
+	GstJpegParsePrivate* priv = GST_JPEGPARSE_GET_PRIVATE (object);
+	/* GstJpegParse *parse = GST_JPEG_PARSE (object);  */
+
+	switch (prop_id)
+	{
+	case PROP_THUMBNAILONLY:
+		priv->thumbnail_only = g_value_get_boolean (value);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+		break;
+	}
+
+	return;
+}
+
+static void
+gst_jpeg_parse_get_property (GObject* object, guint prop_id,
+			      GValue* value, GParamSpec* pspec)
+{
+	GstJpegParsePrivate* priv = GST_JPEGPARSE_GET_PRIVATE (object);
+	/*  GstJpegParse *parse = GST_JPEG_PARSE (object);  */
+
+	switch (prop_id)
+	{
+	case PROP_THUMBNAILONLY:
+		g_value_set_boolean (value, priv->thumbnail_only);
+		break;
+	default:
+		G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+		break;
+	}
+	return;
+}
+
+
 
 static void
 gst_jpeg_parse_dispose (GObject * object)
@@ -264,6 +359,7 @@ gst_jpeg_parse_find_end_marker (GstJpegParse * parse, const guint8 * data,
     guint size)
 {
   guint offset = 0;
+  GstJpegParsePrivate* priv = GST_JPEGPARSE_GET_PRIVATE (parse);
 
   while (1) {
     guint marker_len;
@@ -294,6 +390,12 @@ gst_jpeg_parse_find_end_marker (GstJpegParse * parse, const guint8 * data,
     } else {
       GST_LOG_OBJECT (parse, "At offset %u: marker %02x, length %u", offset,
           tag, marker_len);
+      if((tag == 0xe1) && (priv->thumbnail_length == 0)) {
+          priv->thumbnail_offset = offset +2 ;
+          priv->thumbnail_length = marker_len;
+          GST_DEBUG_OBJECT (parse, "  Buffer %02x : offset %u | mark_length %u",
+                  tag, priv->thumbnail_offset, priv->thumbnail_length);
+      }
       offset += marker_len;
     }
   }
@@ -530,16 +632,21 @@ static GstFlowReturn
 gst_jpeg_parse_chain (GstPad * pad, GstBuffer * buf)
 {
   GstJpegParse *parse;
-  guint len;
+  guint len, thumbnail_ffd8_offset, thumbnail_buf_length;
   GstClockTime timestamp, duration;
   GstFlowReturn ret = GST_FLOW_OK;
+  GstJpegParsePrivate* priv;
+  GstBuffer * thumbnail_buf;
 
   parse = GST_JPEG_PARSE (GST_PAD_PARENT (pad));
+  priv = GST_JPEGPARSE_GET_PRIVATE (parse);
 
   timestamp = GST_BUFFER_TIMESTAMP (buf);
   duration = GST_BUFFER_DURATION (buf);
 
   gst_adapter_push (parse->adapter, buf);
+  thumbnail_ffd8_offset=0;
+
 
   while (ret == GST_FLOW_OK && gst_jpeg_parse_skip_to_jpeg_header (parse)) {
     if (GST_CLOCK_TIME_IS_VALID (timestamp))
@@ -554,6 +661,44 @@ gst_jpeg_parse_chain (GstPad * pad, GstBuffer * buf)
         return GST_FLOW_OK;
     } else {
       len = GST_BUFFER_SIZE (buf);
+    }
+
+    if ((priv->thumbnail_only) && (priv->thumbnail_length) ) {
+      GST_DEBUG_OBJECT (parse, "thumbnail_offset: %d & thumbnail_length: %d",
+              priv->thumbnail_offset, priv->thumbnail_length);
+
+      /* Search for SOI (0xffd8) header within the EXIF (0xffe1) tag       */
+      /* the value corresponds to the absolute position within the adapter */
+      /* starting search point  = offset + marker length + initial header  */
+      thumbnail_ffd8_offset = gst_adapter_masked_scan_uint32 (parse->adapter,
+          0xffffff00, 0xffd8ff00, (priv->thumbnail_offset+2+2),
+          (priv->thumbnail_length) );
+
+      GST_DEBUG_OBJECT (parse, "thumbnail_ffd8_offset: %d ",
+                thumbnail_ffd8_offset);
+
+      /* Thumbnail buffer length calculation                         */
+      /* size = marker length - SOI offset + initial header +        */
+      /* previous marker offset + 1 (offsets start counting from 0 ) */
+      thumbnail_buf_length = ( priv->thumbnail_length - thumbnail_ffd8_offset
+                + 2 + priv->thumbnail_offset + 1 );
+      /* Thumbnail buffer allocation                            */
+      thumbnail_buf = gst_buffer_try_new_and_alloc (thumbnail_buf_length );
+      /* If succeeded  */
+      if (thumbnail_buf) {
+          gst_adapter_copy (parse->adapter, GST_BUFFER_DATA(thumbnail_buf),
+                  thumbnail_ffd8_offset, thumbnail_buf_length );
+          gst_adapter_clear(parse->adapter);
+          gst_adapter_push (parse->adapter, thumbnail_buf);
+
+          len = gst_jpeg_parse_get_image_length (parse);
+          GST_DEBUG_OBJECT (parse, "thumbnail_buf len : %d", len);
+      } else {
+          GST_ELEMENT_ERROR (parse, STREAM, DECODE,
+                  ("Failed to allocate thumbnail buffer of size %u", len),
+                  ("Failed to allocate thumbnail buffer of size %u", len));
+      }
+
     }
 
     ret = gst_jpeg_parse_push_buffer (parse, len);
